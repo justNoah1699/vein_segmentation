@@ -86,10 +86,10 @@ class SPPblock_original(nn.Module):
 
     def forward(self, x):
         self.in_channels, h, w = x.size(1), x.size(2), x.size(3)
-        self.layer1 = F.upsample(self.conv(self.pool1(x)), size=(h, w), mode='bilinear')
-        self.layer2 = F.upsample(self.conv(self.pool2(x)), size=(h, w), mode='bilinear')
-        self.layer3 = F.upsample(self.conv(self.pool3(x)), size=(h, w), mode='bilinear')
-        self.layer4 = F.upsample(self.conv(self.pool4(x)), size=(h, w), mode='bilinear')
+        self.layer1 = F.interpolate(self.conv(self.pool1(x)), size=(h, w), mode='bilinear', align_corners=True)
+        self.layer2 = F.interpolate(self.conv(self.pool2(x)), size=(h, w), mode='bilinear', align_corners=True)
+        self.layer3 = F.interpolate(self.conv(self.pool3(x)), size=(h, w), mode='bilinear', align_corners=True)
+        self.layer4 = F.interpolate(self.conv(self.pool4(x)), size=(h, w), mode='bilinear', align_corners=True)
 
         out = torch.cat([self.layer1, self.layer2, self.layer3, self.layer4, x], 1)
 
@@ -137,7 +137,7 @@ class CoRE_Net_Encoder(nn.Module):
         self._out_feature_strides = {name: 2**(idx+2)
                                      for idx, name in enumerate(self._out_features)} # {4,8,16,32}
 
-        resnet = models.resnet34(pretrained=False)
+        resnet = models.resnet34(weights=None)
         # weight = .clone()
         self.firstconv = resnet.conv1
         #self.firstconv = nn.Conv2d(4, 64, kernel_size=7, stride=2, padding=3, bias=False)
