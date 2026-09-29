@@ -13,7 +13,7 @@ Shape shorthand in this module:
     P: number of points
 """
 
-def mask_rcnn_loss(pred_mask_logits, masks, b_map=None, vis_period=0):
+def mask_rcnn_loss(pred_mask_logits, masks, b_map=None, vis_period=0, pos_weight=100.0):
     """
     Compute the mask prediction loss defined in the Mask R-CNN paper.
 
@@ -76,27 +76,20 @@ def mask_rcnn_loss(pred_mask_logits, masks, b_map=None, vis_period=0):
     #         vis_mask = torch.stack([vis_mask] * 3, axis=0)
     #         storage.put_image(name + f" ({idx})", vis_mask)
 
+    pw = torch.tensor(pos_weight, device=pred_mask_logits.device)
+
     if b_map is not None:
-        mask_loss = F.binary_cross_entropy_with_logits(pred_mask_logits, gt_masks, reduction="none")
+        mask_loss = F.binary_cross_entropy_with_logits(
+            pred_mask_logits, gt_masks, reduction="none", pos_weight=pw
+        )
         loss = mask_loss * b_map
         loss = loss.mean()
-        # loss = self.loss(mask, pred, weighted=True)
-        # loss = loss * self.b_map.detach()
-        # loss_0 = loss * (1 - mask) * self.b_map.detach()
-        # loss_1 = loss * mask * self.b_map.detach()
-        # loss = loss_0.mean() + loss_1.mean()
-        # loss = loss.mean()
-        # pred = pred * self.b_map.detach()
-        # mask = mask * self.b_map.detach()
     else:
-        mask_loss = F.binary_cross_entropy_with_logits(pred_mask_logits, gt_masks, reduction="mean")
+        mask_loss = F.binary_cross_entropy_with_logits(
+            pred_mask_logits, gt_masks, reduction="mean", pos_weight=pw
+        )
         loss = mask_loss
-        # loss = self.loss(mask, pred, weighted=True)
-        # loss_0 = loss * (1 - mask)
-        # loss_1 = loss * mask
-        # loss = loss_0.mean() + loss_1.mean()
 
-    # mask_loss = F.binary_cross_entropy_with_logits(pred_mask_logits, gt_masks, reduction="mean")
     return loss
 
 

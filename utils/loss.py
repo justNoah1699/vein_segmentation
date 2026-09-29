@@ -193,9 +193,11 @@ class dice_bce_loss(nn.Module):
         loss_iou = 1 - score_iou
         return 0.5*loss_dice + 0.5*loss_iou
 
-    def __call__(self, y_true, y_pred, weighted=False):
+    def __call__(self, y_true, y_pred, weighted=False, pos_weight=100.0):
         if weighted is True:
-            a = self.weight_bce_loss(y_pred, y_true)
+            per_pixel_loss = self.weight_bce_loss(y_pred, y_true)
+            weight_map = torch.where(y_true == 1, pos_weight, 1.0)
+            a = (per_pixel_loss * weight_map).mean()
         else:
             a = self.bce_loss(y_pred, y_true)
         b = self.soft_dice_loss(y_true, y_pred)

@@ -180,7 +180,7 @@ def image_reader(img_path, outline_path, vein_path):
     index = np.where(outline < 100)
     mask[index] = outline[index]
     # mask = outline + vein
-    mask = 255 - mask
+    #- mask = 255 - mask    # inversion not needed because masks are already white on black
     _, mask = cv2.threshold(mask, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
     img = cv2.resize(img, (448, 448), interpolation=cv2.INTER_NEAREST)
@@ -265,7 +265,7 @@ class ImageFolder(data.Dataset):
         #-              '22_Honeysuckle', '23_SweetPotato', '24_Cedar', '25_Thistle', '26_MirabilisJalapa',
         #-              '27_Sycamores', '28_Lilac', '29_Persimmon', '30_Mulberry', '31_SichuanPepper',
         #-              '32_VitexNegundoVar', '33_MagnoliaDenudata', '34_ChineseRose', '35_Elm', '36_Holly']
-        name_list = ['photo', 'scan']
+        name_list = ['photo', 'scan', 'scan_and_photo']
         for i in range(len(name_list)):
             name_list[i] = name_list[i] + '_labels'
         assert self.dataset in name_list, "the dataset should be within range"

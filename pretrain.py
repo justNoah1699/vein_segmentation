@@ -47,6 +47,10 @@ def parse_args():
     parser.add_argument('--dataset-size', default=10, type=int,
                         help='dataset to apply')
 
+    parser.add_argument('--pos-weight', default=100.0, type=float,
+                        help='positive class weight for vein pixels in BCE loss')
+    parser.add_argument('--max_norm', default=1.0, type=float,
+                        help='max total gradient norm for clipping; gradients above this are rescaled (use a very large value to effectively disable clipping)')
     parser.add_argument('--num-subdivision-points', default=28 * 28, type=int,
                         help='number of most uncertain points selected')
     parser.add_argument("--learning_rate", default=3e-2, type=float,
@@ -272,6 +276,7 @@ def main(args):
         train_epoch_loss = 0
         train_epoch_iou = 0
         index = 0
+        gn_max = 0
 
         # set model to training mode
         solver.train()
@@ -284,6 +289,7 @@ def main(args):
             img = img.cuda()
             solver.set_input(img, mask, b_map)
             train_loss, pred = solver.optimize()
+            gn_max = max(gn_max, solver.grad_norm.item())
             train_epoch_loss += train_loss
 
             # compute iou
@@ -315,6 +321,7 @@ def main(args):
         log.info('-' * 10)
         log.info('epoch: {}, time: {}'.format(epoch, int(time.time() - tic)))
         log.info('train_loss: {}'.format(train_epoch_loss))
+        log.info('grad_norm_max: {}'.format(gn_max))
 
         record['train'][epoch] = OrderedDict()
         record['train'][epoch]['train_loss'] = train_epoch_loss
@@ -343,7 +350,7 @@ def main(args):
 
         # early stop
         # if no_optim > args.num_early_stop:
-        #     log.info('early stop at {} epoch, for {} epoch!'.format(epoch, no_optim))
+            # log.info('early stop at {} epoch, for {} epoch!'.format(epoch, no_optim))
             # break
 
         if no_optim > args.num_update_lr:

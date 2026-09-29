@@ -21,6 +21,11 @@ class MyFrame():
         self.net = net(args.num_subdivision_points).cuda()
         #self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
         self.optimizer = torch.optim.Adam(params=self.net.parameters(), lr=args.learning_rate)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer, T_max=args.t_total, eta_min=1e-7)
+
+        self.pos_weight = args.pos_weight
+        self.max_norm = args.max_norm
 
         self.loss = loss()
         self.old_lr = args.learning_rate
@@ -98,7 +103,7 @@ class MyFrame():
             mask = self.mask
 
 
-            loss_dict = {"loss_mask": mask_rcnn_loss(mask_coarse_logits, mask, self.b_map)}
+            loss_dict = {"loss_mask": mask_rcnn_loss(mask_coarse_logits, mask, self.b_map, pos_weight=self.pos_weight)}
             loss_dict.update({
                     "loss_mask_point": roi_mask_point_loss(
                         mask_point_logits, mask, point_coords_wrt_image
@@ -149,7 +154,7 @@ class MyFrame():
             mask = self.mask
 
 
-            loss_dict = {"loss_mask": mask_rcnn_loss(mask_coarse_logits, mask, self.b_map)}
+            loss_dict = {"loss_mask": mask_rcnn_loss(mask_coarse_logits, mask, self.b_map, pos_weight=self.pos_weight)}
             loss_dict.update({
                     "loss_mask_point": roi_mask_point_loss(
                         mask_point_logits, mask, point_coords_wrt_image
@@ -168,12 +173,14 @@ class MyFrame():
 
             pred = result['mask_coarse_logits'].sigmoid()
         
-        _, loss_dice_iou = self.loss(mask, pred)
+        _, loss_dice_iou = self.loss(mask, pred, weighted=True)
         loss_dict.update({ "loss_dice_iou": self.lambda_dice_iou_loss * loss_dice_iou })
 
         loss = sum(loss_dict.values())
         loss.backward()
+        self.grad_norm = torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=self.max_norm)
         self.optimizer.step()
+        self.scheduler.step()
 
         return loss.data, pred
         
