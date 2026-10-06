@@ -313,14 +313,18 @@ def calculate_IoU_Dice(results,
                        gt_seg_maps,
                     #    logger=None):
                        logger=logger,
-                       is_printTable=False):
+                       is_printTable=False,
+                       threshold=None):
     
     # binary 
     results_bi = list()
-    for i in range(len(results)):
-        pred = np.array(results[i] * 255, np.uint8)
-        _, _y_pred = cv2.threshold(pred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        results_bi.append(_y_pred/255)
+    for r in results:
+        if threshold is None:
+            pred = np.array(r * 255, np.uint8)
+            _, y = cv2.threshold(pred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            results_bi.append(y / 255)
+        else:
+            results_bi.append((r >= threshold).astype(np.float32))
 
     IoU_results = evaluate(results_bi, 
                             gt_seg_maps, 

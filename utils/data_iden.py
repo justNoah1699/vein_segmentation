@@ -108,6 +108,29 @@ def randomRotate90(image, mask, u=0.5):
     return image, mask
 
 
+def random_crop(img, mask, b_map, patch_size=224):
+    h, w = img.shape[:2]
+    ph, pw = patch_size, patch_size
+
+    # pad if the image is smaller than the patch
+    pad_h = max(0, ph - h)
+    pad_w = max(0, pw - w)
+    if pad_h > 0 or pad_w > 0:
+        img = np.pad(img, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
+        mask = np.pad(mask, ((0, pad_h), (0, pad_w)), mode='reflect')
+        b_map = np.pad(b_map, ((0, pad_h), (0, pad_w)), mode='reflect')
+        h, w = img.shape[:2]
+
+    y = np.random.randint(0, h - ph + 1)
+    x = np.random.randint(0, w - pw + 1)
+
+    img = img[y:y+ph, x:x+pw]
+    mask = mask[y:y+ph, x:x+pw]
+    b_map = b_map[y:y+ph, x:x+pw]
+
+    return img, mask, b_map
+
+
 def default_loader(img_path, mask_path):
     img = cv2.imread(img_path)
     # log.info("img:{}".format(np.shape(img)))
@@ -251,20 +274,15 @@ def read_datasets(dataset, dataset_size, root_path, mode='train'):
 
 class ImageFolder(data.Dataset):
 
-    def __init__(self, root_path, datasets='photo', mode='train', dataset_size=-1, is_random=True):
+    def __init__(self, root_path, datasets='photo', mode='train', dataset_size=-1, is_random=True, crops_per_image=4, patch_size=224):
         self.root = root_path
         self.mode = mode
         self.dataset = datasets
         self.dataset_size = dataset_size
         self.is_random = is_random
-        #- name_list = ['1_Walnut', '2_SmokeTree', '3_Poplar', '4_OrientalCherry', '5_ChineseRedbud',
-        #-              '6_CrapeMyrtle', '7_Hackberry', '8_CrataegusPinnatifida', '9_VirginiaCreeper',
-        #-              '10_ForsythiaSuspensa', '11_FructusXanthii', '12_Cynanchum', '13_Grape',
-        #-              '14_Hibiscus', '15_MorningGlory', '16_Apricot', '17_ChenopodiumAlbum',
-        #-              '18_PhloxPaniculata', '19_CallistephusChinensis', '20_MapleTree', '21_Amaranth',
-        #-              '22_Honeysuckle', '23_SweetPotato', '24_Cedar', '25_Thistle', '26_MirabilisJalapa',
-        #-              '27_Sycamores', '28_Lilac', '29_Persimmon', '30_Mulberry', '31_SichuanPepper',
-        #-              '32_VitexNegundoVar', '33_MagnoliaDenudata', '34_ChineseRose', '35_Elm', '36_Holly']
+        self.crops_per_image = crops_per_image if is_random else 1
+        self.patch_size = patch_size
+        
         name_list = ['photo', 'scan', 'scan_and_photo']
         for i in range(len(name_list)):
             name_list[i] = name_list[i] + '_labels'
@@ -273,15 +291,18 @@ class ImageFolder(data.Dataset):
         self.images, self.outlines, self.veins, self.image_names = read_datasets(self.dataset, self.dataset_size, self.root, self.mode)
 
     def __getitem__(self, index):
+        # map the virtual index back to the real image index
+        real_index = index // self.crops_per_image
 
-        # img, mask = default_DRIVE_loader(self.images[index], self.masks[index])
+        #- img, mask = default_DRIVE_loader(self.images[index], self.masks[index])
         is_random = self.is_random
 
-        img, mask, b_map = image_reader(self.images[index], self.outlines[index], self.veins[index])
+        img, mask, b_map = image_reader(self.images[real_index], self.outlines[real_index], self.veins[real_index])
 
         if is_random is False:
             img, mask, b_map = default_Dataset_loader(img, mask, b_map)
         else:
+            img, mask, b_map = random_crop(img, mask, b_map, patch_size=self.patch_size)
             img, mask, b_map = random_Dataset_loader(img, mask, b_map)
 
         img = torch.tensor(img, dtype=torch.float)
@@ -292,4 +313,4 @@ class ImageFolder(data.Dataset):
 
     def __len__(self):
         assert len(self.images) == len(self.outlines) == len(self.veins), 'The number of images must be equal to labels'
-        return len(self.images)
+        return len(self.images) * self.crops_per_image

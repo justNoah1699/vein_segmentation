@@ -1,9 +1,0 @@
- 
-To activate the conda environment, type
-'source $CONDA_ROOT/bin/activate'
- 
- 
-To activate the conda environment, type
-'source $CONDA_ROOT/bin/activate'
- 
-python: can't open file '/mnt/nfs/home/justs/detection_segmentation/IEE/vein_segmentation/slurm/pretrain.py': [Errno 2] No such file or directory

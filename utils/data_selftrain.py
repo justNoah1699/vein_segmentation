@@ -33,8 +33,7 @@ def randomHueSaturationValue(image, hue_shift_limit=(-180, 180),
         image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(image)
         hue_shift = np.random.randint(hue_shift_limit[0], hue_shift_limit[1] + 1)
-        hue_shift = np.uint8(hue_shift)
-        h += hue_shift
+        h = ((h.astype(np.int16) + hue_shift) % 180).astype(np.uint8)
         sat_shift = np.random.uniform(sat_shift_limit[0], sat_shift_limit[1])
         s = cv2.add(s, sat_shift)
         val_shift = np.random.uniform(val_shift_limit[0], val_shift_limit[1])
@@ -108,6 +107,18 @@ def randomRotate90(image, mask, u=0.5):
         mask = np.rot90(mask)
 
     return image, mask
+
+
+def random_flip_rot90(img, mask, b_map):
+    flip = np.random.random() < 0.5
+    k = np.random.randint(4)
+    out = []
+    for x in (img, mask, b_map):
+        if flip:
+            x = cv2.flip(x, 1)
+        x = np.rot90(x, k)
+        out.append(np.ascontiguousarray(x))   # rot90 returns a view; cv2 later needs contiguous arrays
+    return out
 
 
 def default_loader(img_path, mask_path):
@@ -186,7 +197,7 @@ def image_reader(img_path, outline_path, vein_path):
         index = np.where(outline < 100)
         mask[index] = outline[index]
         # mask = outline + vein
-        mask = 255 - mask
+        #- mask = 255 - mask # inversion not needed because masks are already white on black
         _, mask = cv2.threshold(mask, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
         img = cv2.resize(img, (448, 448), interpolation=cv2.INTER_NEAREST)
@@ -258,13 +269,13 @@ def read_datasets(dataset, root_path, mode='train'):
     log.info('mode: {}'.format(mode))
     for image_name in image_list:
         for layer in os.listdir(os.path.join(image_root, image_name)):
-            if '背景' in layer:
+            if 'leaf' in layer:
                 image_path = os.path.join(image_root, image_name, layer)
-            elif '图层 1' in layer:
+            elif 'outline' in layer:
                 outline_path = os.path.join(image_root, image_name, layer)
-            elif '图层 2' in layer:
+            elif 'midrib' in layer:
                 pass
-            elif '图层 3' in layer:
+            elif 'vein' in layer:
                 vein_path = os.path.join(image_root, image_name, layer)
             else:
                 log.info('{} : {} has no data'.format(image_name, layer))
@@ -364,19 +375,12 @@ def data_whole_frag(img, mask, mask_label, size):
 
 class ImageFolder(data.Dataset):
 
-    def __init__(self, root_path, datasets='36_Holly', mode='train', is_random=True):
+    def __init__(self, root_path, datasets='scan_and_photo', mode='train', is_random=True):
         self.root = root_path
         self.mode = mode
         self.dataset = datasets
         self.is_random = is_random
-        name_list = ['1_Walnut', '2_SmokeTree', '3_Poplar', '4_OrientalCherry', '5_ChineseRedbud',
-                     '6_CrapeMyrtle', '7_Hackberry', '8_CrataegusPinnatifida', '9_VirginiaCreeper',
-                     '10_ForsythiaSuspensa', '11_FructusXanthii', '12_Cynanchum', '13_Grape',
-                     '14_Hibiscus', '15_MorningGlory', '16_Apricot', '17_ChenopodiumAlbum',
-                     '18_PhloxPaniculata', '19_CallistephusChinensis', '20_MapleTree', '21_Amaranth',
-                     '22_Honeysuckle', '23_SweetPotato', '24_Cedar', '25_Thistle', '26_MirabilisJalapa',
-                     '27_Sycamores', '28_Lilac', '29_Persimmon', '30_Mulberry', '31_SichuanPepper',
-                     '32_VitexNegundoVar', '33_MagnoliaDenudata', '34_ChineseRose', '35_Elm', '36_Holly']
+        name_list = ['photo', 'scan', 'scan_and_photo']
         for i in range(len(name_list)):
             name_list[i] = name_list[i] + '_labels'
         assert self.dataset in name_list, "the dataset should be within range"
@@ -395,6 +399,9 @@ class ImageFolder(data.Dataset):
         if self.masks != None:
             mask = self.masks[index]
             b_map = self.b_maps[index]
+
+        if is_random:
+            img, mask, b_map = random_flip_rot90(img, mask, b_map)
 
         if is_random is False:
             #TODO: speed up loading

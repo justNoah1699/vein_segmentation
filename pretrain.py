@@ -182,6 +182,7 @@ def test(args, solver, writer, record, data_loader, epoch, mode='test'):
         return train_epoch_loss
 
 def main(args):
+    
     log.info('Host: {}, user: {}, CUDA_VISIBLE_DEVICES: {}, cwd: {}'.format(
         socket.gethostname(), getpass.getuser(), os.environ.get('CUDA_VISIBLE_DEVICES', ''), os.getcwd()))
 

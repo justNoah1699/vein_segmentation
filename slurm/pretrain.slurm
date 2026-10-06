@@ -20,4 +20,4 @@ export LC_ALL=C
 export OMP_NUM_THREADS=1
 
 ### Program calls to start the calculation
-python /home/justs/detection_segmentation/IEE/vein_segmentation/pretrain.py --exp-dir /home/justs/detection_segmentation/IEE/vein_segmentation/results --data-root /masc_shared/ag_nauss/projects/phytoakmeter/IEE/vein_segmentation_training_data --dataset scan_and_photo_labels --dataset-size=32 --total-epoch=300 --learning_rate 1e-6 --batch-size=4 --pos-weight=30 --seed=1 --max_norm=1.0 --total-epoch=300
+python /home/justs/detection_segmentation/IEE/vein_segmentation/pretrain.py --exp-dir /home/justs/detection_segmentation/IEE/vein_segmentation/results --data-root /masc_shared/ag_nauss/projects/phytoakmeter/IEE/vein_segmentation_training_data --dataset scan_and_photo_labels --dataset-size=30 --total-epoch=150 --learning_rate 1e-6 --batch-size=4 --pos-weight=500 --max_norm=1.0 --total-epoch=300

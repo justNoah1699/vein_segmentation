@@ -118,11 +118,11 @@ def filling_with_points(mask_coarse_logits, point_logits, index_infer, point_ind
     return mask_logits
 
 
-def CMM(mask_logits):
+def CMM(mask_logits, num_points):
 
     uncertainty_map = calculate_uncertainty(mask_logits)
     point_indices_uncertain, point_coords = get_uncertain_point_coords_on_grid(
-        uncertainty_map, args.num_subdivision_points
+        uncertainty_map, num_points
     )
 
     return point_indices_uncertain
@@ -180,18 +180,14 @@ def infer_point(args, dataset, solver, threshold, outer_epoch, mode):
 
             R, C, H, W = pred.shape
             # normlization
-            pred_1 = pred.reshape(R*C, -1) 
-            min_v = pred_1.min(dim=1)[0].reshape(R, C, 1, 1)
-            max_v = pred_1.max(dim=1)[0].reshape(R, C, 1, 1)
-            pred = (pred - min_v) / (max_v - min_v)
-
+            #- pred_1 = pred.reshape(R*C, -1) 
+            #- min_v = pred_1.min(dim=1)[0].reshape(R, C, 1, 1)
+            #- max_v = pred_1.max(dim=1)[0].reshape(R, C, 1, 1)
+            #- pred = (pred - min_v) / (max_v - min_v)
 
             pred = pred.squeeze().cpu()
-            show_pred = pred * 255.
-            show_pred = show_pred.int().numpy()
-            show_pred = np.array(show_pred, np.uint8)
-
-            _, show_pred = cv2.threshold(show_pred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            pred = pred.squeeze().cpu()
+            show_pred = ((pred.numpy() >= 0.9) * 255).astype(np.uint8)
             pred_results.append(show_pred)
 
             logit = pred.squeeze().cpu()
@@ -205,7 +201,7 @@ def infer_point(args, dataset, solver, threshold, outer_epoch, mode):
                 b_map[pred_map >= threshold['high']] = 1
                 b_map[pred_map <= threshold['low']] = 1
 
-                point_indices_uncertain = CMM(mask_logits)
+                point_indices_uncertain = CMM(mask_logits, args.num_subdivision_points)
                 point_logits = point_refiner(None, mask_coarse_logits, mask_features_list, features_scales, features, solver, point_indices_uncertain)
                 mask_logits = filling_with_points(mask_logits, point_logits, None, point_indices_uncertain)
 
@@ -216,7 +212,7 @@ def infer_point(args, dataset, solver, threshold, outer_epoch, mode):
                         .view(R, C, H, W)
                 )
             else:
-                b_map = torch.ones(pred.size())                
+                b_map = ((pred >= threshold['high']) | (pred <= threshold['low'])).float()     
                 
             if args.point_correction_on:
                 index_break, index_branching = PCM(pred)
@@ -250,5 +246,8 @@ def infer_labels(args, trainset, testset, solver, outer_epoch):
     trainset.masks = pred_results
     trainset.b_maps = b_map_results
     trainset.is_random = True
+
+    log.info('outer {} pseudo-label fg: {:.4f}'.format(
+    outer_epoch, np.mean([(p > 0).mean() for p in pred_results])))
 
     return trainset

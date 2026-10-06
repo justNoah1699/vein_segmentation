@@ -30,15 +30,17 @@ from utils.data_selftrain import ImageFolder as ImageFolder_selftrain
 import utils.infer as my_infer
 from utils.metrics import calculate_IoU_Dice
 
+import math
+
 
 def parse_args():
     """
     Parse input arguments
     """
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--exp-dir', default='./debug/selftrain', type=str,
+    parser.add_argument('--exp-dir', default='./results/selftrain', type=str,
                         help='directory to save results and logs')
-    parser.add_argument('--data-root', default='./data/LVD2021', type=str,
+    parser.add_argument('--data-root', default='./vein_segmentation_training_data/scan_and_photo', type=str,
                         help='directory to load training or testing data')
     parser.add_argument('--batch-size', default=64, type=int,
                         help='batch size')
@@ -50,6 +52,10 @@ def parse_args():
     parser.add_argument('--dataset', default='36_Holly_labels', type=str,
                         help='dataset to apply')
 
+    parser.add_argument('--pos-weight', default=100.0, type=float,
+                        help='positive class weight for vein pixels in BCE loss')
+    parser.add_argument('--max_norm', default=1.0, type=float,
+                        help='max total gradient norm for clipping; gradients above this are rescaled (use a very large value to effectively disable clipping)')
     parser.add_argument('--if-threshold', default='0.99,0.05', type=str,
                         help='the inference threshold of the head1 output, '
                              '[0] higher border, [1] lower border')
@@ -184,6 +190,7 @@ def test(args, solver, writer, record, data_loader, outer_epoch, inner_epoch, mo
         record[mode][outer_epoch][inner_epoch] = OrderedDict()
         # record[mode][outer_epoch]['inner_epoch'] = inner_epoch
         record[mode][outer_epoch][inner_epoch][f'{mode}_loss'] = train_epoch_loss.cpu()
+        record[mode][outer_epoch][inner_epoch]['mDice'] = float(evaluation_results[1]['mDice'])
 
         train_epoch_metric = OrderedDict()
         train_epoch_metric['loss'] = train_epoch_loss
@@ -194,6 +201,9 @@ def Self_Train(args, solver, trainset, validset, testset, outer_epoch, writer, r
     tic = time.time()
     log.info('========start inference======= time: {}'.format(int(time.time() - tic)))
     trainset = my_infer.infer_labels(args, trainset, testset, solver, outer_epoch)
+    fg = float(np.mean([(m > 0).mean() for m in trainset.masks]))
+    record.setdefault('pseudo_fg', OrderedDict())[outer_epoch] = fg
+    log.info('outer {} pseudo-label fg: {:.4f}'.format(outer_epoch, fg))
     log.info('========inference end======= time: {}'.format(int(time.time() - tic)))
     #trainset = sample_balance_dataset(unbalance_data, dataset)
     train_loader = torch.utils.data.DataLoader(
@@ -226,7 +236,10 @@ def Self_Train(args, solver, trainset, validset, testset, outer_epoch, writer, r
     test_epoch_metric = test(args, solver, writer, record, test_loader, outer_epoch, inner_epoch=-1, mode='test')
     log.info('========show valid and test loss done!==========')
 
-    valid_epoch_best_metric = valid_epoch_best_metric
+    #-valid_epoch_best_metric = valid_epoch_best_metric
+    if valid_epoch_best_metric['loss'] == args.initial_epoch_loss:   # first outer epoch only
+        valid_epoch_best_metric = valid_epoch_metric
+        solver.save(osp.join(args.exp_dir, 'weights/valid.th'))
     train_epoch_best_metric = None
 
     log.info('ready to do self-training')
@@ -285,25 +298,37 @@ def Self_Train(args, solver, trainset, validset, testset, outer_epoch, writer, r
                 solver.save(osp.join(args.exp_dir, 'weights/train.th'))
             if not osp.exists(osp.join(args.exp_dir, 'weights/valid.th')):
                 solver.save(osp.join(args.exp_dir, 'weights/valid.th'))
-        
-        if train_epoch_metric['loss'] >= train_epoch_best_metric['loss']:
-            pass
-        else:
+
+        if train_epoch_metric['loss'] < train_epoch_best_metric['loss']:
             log.info('-----saving best training params-----')
             solver.save(osp.join(args.exp_dir, 'weights/train.th'))
+            train_epoch_best_metric = train_epoch_metric
 
-
-        if valid_epoch_metric['loss'] >= valid_epoch_best_metric['loss']:
-            no_optim += 1
-        else:
+        if valid_epoch_metric['loss'] < valid_epoch_best_metric['loss']:
             no_optim = 0
             log.info('-----saving best validation params-----')
             solver.save(osp.join(args.exp_dir, 'weights/valid.th'))
+            valid_epoch_best_metric = valid_epoch_metric
+        else:
+            no_optim += 1
+        #- if train_epoch_metric['loss'] >= train_epoch_best_metric['loss']:
+        #-     pass
+        #- else:
+        #-     log.info('-----saving best training params-----')
+        #-     solver.save(osp.join(args.exp_dir, 'weights/train.th'))
+
+
+        #- if valid_epoch_metric['loss'] >= valid_epoch_best_metric['loss']:
+        #-     no_optim += 1
+        #- else:
+        #-     no_optim = 0
+        #-     log.info('-----saving best validation params-----')
+        #-     solver.save(osp.join(args.exp_dir, 'weights/valid.th'))
 
         # early stop
-        # if no_optim > args.num_early_stop:
-        #     log.info('early stop at %d epoch' % inner_epoch)
-        #     # break
+        if no_optim > args.num_early_stop:
+            log.info('early stop at %d epoch' % inner_epoch)
+            break
 
         if no_optim > args.num_update_lr:
             if solver.old_lr < 5e-7:
@@ -313,7 +338,7 @@ def Self_Train(args, solver, trainset, validset, testset, outer_epoch, writer, r
 
     log.info('Outer Finish!')
 
-    solver_save_name = osp.join(args.exp_dir, 'weights/train.th')
+    solver_save_name = osp.join(args.exp_dir, 'weights/valid.th')
 
     return solver_save_name, train_epoch_best_metric, valid_epoch_best_metric
 
@@ -324,8 +349,6 @@ def main(args):
 
     log.info('torch version: {}'.format(torch.__version__))
     log.info('Command line is: {}'.format(' '.join(sys.argv)))
-    log.info('Called with args:')
-    print_args(args)
 
     # dump config.json
     with open(osp.join(args.exp_dir, 'config.json'), 'w') as f:
@@ -362,13 +385,6 @@ def main(args):
     record['valid'] = OrderedDict()
     record['test'] = OrderedDict()
 
-    # build model
-    log.info('building model with evalmode')
-
-    args.mask_point_on = args.confidence_on or args.point_correction_on
-    solver = MyFrame(CoRE_Net, dice_bce_loss, args, evalmode=True, pointmode=args.mask_point_on)
-    solver_save_path = args.load_pretrained_path
-
     # load training, validation and testing dataset
     log.info('loading data') 
     # training data is allowed to do augmentation (random True)
@@ -383,6 +399,18 @@ def main(args):
     testset = ImageFolder_selftrain(root_path=args.data_root, datasets=args.dataset, mode='test', is_random=False)
     log.info('done!')
 
+    iter_per_epoch = math.ceil(len(trainset) / args.batch_size)  # == len(DataLoader), drop_last=False
+    args.t_total = args.total_epoch * args.total_inner_epoch * iter_per_epoch
+
+    log.info('Called with args:')
+    print_args(args)
+    
+    # build model
+    log.info('building model with evalmode')
+    args.mask_point_on = args.confidence_on or args.point_correction_on
+    solver = MyFrame(CoRE_Net, dice_bce_loss, args, evalmode=True, pointmode=args.mask_point_on)
+    solver_save_path = args.load_pretrained_path
+
     # initialize loss
     train_epoch_best_metric = OrderedDict()
     valid_epoch_best_metric = OrderedDict()
@@ -394,6 +422,7 @@ def main(args):
         # load the params
         log.info('loading retrained model')
         solver.load(solver_save_path)
+        prev_best = valid_epoch_best_metric['loss']
         # self training
         solver_save_path, train_epoch_best_metric, valid_epoch_best_metric = Self_Train(args,
                                                                                     solver,
@@ -405,6 +434,9 @@ def main(args):
                                                                                     record,
                                                                                     train_epoch_best_metric,
                                                                                     valid_epoch_best_metric)
+        if valid_epoch_best_metric['loss'] >= prev_best:
+            log.info('no validation improvement in outer epoch {}, stopping'.format(epoch))
+#            break
 
     log.info('Self-training end')
     # finished, create empty file thus others could check whether or not this task is done
